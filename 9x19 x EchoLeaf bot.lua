@@ -5,7 +5,8 @@ local WEBHOOK_500M = "https://discord.com/api/webhooks/1492690806757396520/-oLtS
 local WEBHOOK_1B   = "https://discord.com/api/webhooks/1492691237638115523/iqmLgclpSqSH4cgttmmL4VY7m7h0RobRmBIit3ZEdU1KVVbKBKJnoAYUVxLJcVISHvsF"
 local FOOTER       = "Bot Server Discord Notifier"
 local SCAN_DELAY   = 0.1
-local HOP_TIME     = 30
+local HOP_TIME     = 15  -- ✅ Hop cada 15 segundos
+local WS_URL       = "wss://joiner-production-b6dd.up.railway.app"
 ----------------------------------------
 
 local HttpService      = game:GetService("HttpService")
@@ -139,27 +140,52 @@ local BRAINROT_IMAGES = {
     ["Popcuru and Fizzuru"]="https://static.wikia.nocookie.net/stealabr/images/a/a9/Popuru_and_Fizzuru.png",
 }
 
--- MUTACIONES conocidas
 local MUTATIONS = {
-    ["x2"] = true, ["x4"] = true, ["x8"] = true,
-    ["x16"] = true, ["x32"] = true, ["x64"] = true,
-    ["Bloodmoon"] = true, ["Golden"] = true,
-    ["Rainbow"] = true, ["Shadow"] = true,
-    ["Crystal"] = true, ["Neon"] = true,
+    ["x2"]=true,["x4"]=true,["x8"]=true,["x16"]=true,["x32"]=true,["x64"]=true,
+    ["Bloodmoon"]=true,["Golden"]=true,["Rainbow"]=true,["Shadow"]=true,
+    ["Crystal"]=true,["Neon"]=true,
 }
 
-pcall(function()
-    if writefile then
-        local ok, _ = pcall(readfile, "autoexec/bot_notifier.lua")
-        if not ok then
-            writefile("autoexec/bot_notifier.lua", "-- Bot Server Discord Notifier autoexec")
-        end
-    end
-end)
+-- ✅ WEBSOCKET - Conectar al servidor
+local wsConnection = nil
+local wsConnected = false
 
-------------------------------------------------
+local function connectWebSocket()
+    task.spawn(function()
+        while true do
+            pcall(function()
+                local ws
+                if WebSocket and WebSocket.connect then
+                    ws = WebSocket.connect(WS_URL)
+                elseif syn and syn.websocket and syn.websocket.connect then
+                    ws = syn.websocket.connect(WS_URL)
+                end
+                if ws then
+                    wsConnection = ws
+                    wsConnected = true
+                    ws.OnClose:Connect(function()
+                        wsConnected = false
+                        wsConnection = nil
+                    end)
+                end
+            end)
+            task.wait(10)
+            if wsConnected then break end
+        end
+    end)
+end
+
+local function wsSend(data)
+    pcall(function()
+        if wsConnected and wsConnection then
+            wsConnection:Send(HttpService:JSONEncode(data))
+        end
+    end)
+end
+
+connectWebSocket()
+
 -- GUI CUENTA ATRAS
-------------------------------------------------
 local timerGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 timerGui.ResetOnSpawn = false
 timerGui.Name = "BotTimer"
@@ -210,9 +236,7 @@ pauseBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-------------------------------------------------
 -- GUI PRINCIPAL
-------------------------------------------------
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 gui.ResetOnSpawn = false
 gui.Name = "BotNotifier"
@@ -362,18 +386,13 @@ topbar.InputBegan:Connect(function(input)
         startPos = main.Position
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or
        input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
-        main.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
-
 UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or
        input.UserInputType == Enum.UserInputType.Touch then
@@ -386,14 +405,10 @@ minBtn.MouseButton1Click:Connect(function()
     if minimized then
         content.Visible = false
         divider.Visible = false
-        TweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-            Size = UDim2.new(0, 360, 0, 52)
-        }):Play()
+        TweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 360, 0, 52)}):Play()
         minBtn.Text = "+"
     else
-        TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 360, 0, 420)
-        }):Play()
+        TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 420)}):Play()
         task.wait(0.35)
         content.Visible = true
         divider.Visible = true
@@ -401,9 +416,7 @@ minBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-------------------------------------------------
 -- FUNCIONES
-------------------------------------------------
 local function setStatus(text, color)
     statusLabel.Text = text
     statusLabel.TextColor3 = color
@@ -416,9 +429,7 @@ end
 
 local function getBrainrotImage(name)
     for k, v in pairs(BRAINROT_IMAGES) do
-        if normalizeName(k) == normalizeName(name) then
-            return v
-        end
+        if normalizeName(k) == normalizeName(name) then return v end
     end
     return nil
 end
@@ -477,13 +488,11 @@ end
 local function addResult(name, value)
     noResults.Visible = false
     resultsList.Visible = true
-
     local item = Instance.new("Frame", resultsList)
     item.Size = UDim2.new(1, 0, 0, 42)
     item.BackgroundColor3 = Color3.fromRGB(20, 24, 38)
     item.BorderSizePixel = 0
     Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
-
     local rangeTag = Instance.new("TextLabel", item)
     rangeTag.Size = UDim2.new(0, 75, 0, 18)
     rangeTag.Position = UDim2.new(0, 8, 0, 4)
@@ -494,7 +503,6 @@ local function addResult(name, value)
     rangeTag.Font = Enum.Font.GothamBold
     rangeTag.BorderSizePixel = 0
     Instance.new("UICorner", rangeTag).CornerRadius = UDim.new(0, 4)
-
     local nameL = Instance.new("TextLabel", item)
     nameL.Size = UDim2.new(0.6, 0, 0, 18)
     nameL.Position = UDim2.new(0, 8, 0, 22)
@@ -504,7 +512,6 @@ local function addResult(name, value)
     nameL.TextSize = 12
     nameL.Font = Enum.Font.GothamBold
     nameL.TextXAlignment = Enum.TextXAlignment.Left
-
     local valL = Instance.new("TextLabel", item)
     valL.Size = UDim2.new(0.35, 0, 1, 0)
     valL.Position = UDim2.new(0.62, 0, 0, 0)
@@ -514,7 +521,6 @@ local function addResult(name, value)
     valL.TextSize = 13
     valL.Font = Enum.Font.GothamBold
     valL.TextXAlignment = Enum.TextXAlignment.Right
-
     resultsList.CanvasSize = UDim2.new(0, 0, 0, #resultsList:GetChildren() * 47)
 end
 
@@ -536,32 +542,38 @@ local function parseProduction(text)
     if u == "T" then return n * 1e12 end
 end
 
+-- ✅ ANTI-ERROR: findServer con pcall completo
 local function findServer()
     local cursor = ""
-    while true do
-        local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
-        local success, result = pcall(function()
-            return HttpService:JSONDecode(game:HttpGet(url))
-        end)
-        if success and result and result.data then
-            for _, server in pairs(result.data) do
-                if server.playing < server.maxPlayers
-                and server.id ~= currentJobId
-                and not triedServers[server.id] then
-                    triedServers[server.id] = true
-                    attempts += 1
-                    attemptsLabel.Text = "Servidores visitados: "..attempts
-                    return server.id
+    local found = nil
+    pcall(function()
+        while true do
+            local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
+            local success, result = pcall(function()
+                return HttpService:JSONDecode(game:HttpGet(url))
+            end)
+            if success and result and result.data then
+                for _, server in pairs(result.data) do
+                    if server.playing < server.maxPlayers
+                    and server.id ~= currentJobId
+                    and not triedServers[server.id] then
+                        triedServers[server.id] = true
+                        attempts += 1
+                        attemptsLabel.Text = "Servidores visitados: "..attempts
+                        found = server.id
+                        return
+                    end
                 end
-            end
-            if result.nextPageCursor then
-                cursor = result.nextPageCursor
+                if result.nextPageCursor then
+                    cursor = result.nextPageCursor
+                else break end
             else break end
-        else break end
-    end
-    return nil
+        end
+    end)
+    return found
 end
 
+-- ✅ ANTI-ERROR: forceHop silencioso sin notificaciones de error
 local function forceHop()
     if isHopping or hopPaused then return end
     isHopping = true
@@ -574,148 +586,124 @@ local function forceHop()
         hopFailed = false
         timerLabel.Text = "⏱ Teleporting..."
         timerLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-        pcall(function()
-            if writefile then
-                local ok, _ = pcall(readfile, "autoexec/bot_notifier.lua")
-                if not ok then
-                    writefile("autoexec/bot_notifier.lua", "-- Bot Server Discord Notifier autoexec")
-                end
-            end
+        -- ✅ Teleport con pcall para suprimir errores
+        local ok = pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, serverId, player)
         end)
-        TeleportService:TeleportToPlaceInstance(placeId, serverId, player)
+        if not ok then
+            isHopping = false
+            hopFailed = false
+            setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+        end
         triedServers = {}
     else
-        hopFailed = true
+        -- ✅ En lugar de mostrar error, simplemente reinicia
+        hopFailed = false
         isHopping = false
+        triedServers = {}
+        setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+        timerLabel.Text = "⏱ Hop in "..HOP_TIME.."s"
+        timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
     end
 end
 
 local function scan()
     local list = {}
-    for _,ui in ipairs(workspace:GetDescendants()) do
-        if ui:IsA("TextLabel") then
-            local value = parseProduction(ui.Text)
-            if value and value >= 10e6 then
-                local parent = ui.Parent
-                for _,c in ipairs(parent:GetChildren()) do
-                    if c:IsA("TextLabel") and not c.Text:find("%$") then
-                        table.insert(list, { name = c.Text, value = value })
-                        break
+    pcall(function()
+        for _,ui in ipairs(workspace:GetDescendants()) do
+            if ui:IsA("TextLabel") then
+                local value = parseProduction(ui.Text)
+                if value and value >= 10e6 then
+                    local parent = ui.Parent
+                    for _,c in ipairs(parent:GetChildren()) do
+                        if c:IsA("TextLabel") and not c.Text:find("%$") then
+                            table.insert(list, { name = c.Text, value = value })
+                            break
+                        end
                     end
                 end
             end
         end
-    end
+    end)
     return list
 end
 
 local function sendWebhook(top, grouped, ordered, jobId)
-    local webhook = getWebhook(top.value)
-    local joinLink = "https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId
+    pcall(function()
+        local webhook = getWebhook(top.value)
+        local joinLink = "https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId
+        local mutation = detectMutation(top.name)
+        local img = getBrainrotImage(top.name)
+        local rangeEmoji = getRangeEmoji(top.value)
+        local rangeLabel = getRangeLabel(top.value)
 
-    local mutation = detectMutation(top.name)
-    local img = getBrainrotImage(top.name)
-    local rangeEmoji = getRangeEmoji(top.value)
-    local rangeLabel = getRangeLabel(top.value)
+        local description = ""
+        description = description..rangeEmoji.." **Rango:** `"..rangeLabel.."`\n"
+        description = description.."💰 **Producción:** `"..formatMoney(top.value).."`\n"
+        description = description.."⚡ **Mutación:** `"..(mutation or "Sin mutación").."`\n"
+        local topCount = grouped[top.name] and grouped[top.name].count or 1
+        description = description.."🔢 **Cantidad:** `"..topCount.."x`\n\n"
+        description = description.."**📋 Join ID**\n```"..jobId.."```\n"
+        description = description.."**🔗 Join Server**\n[**CLICK TO JOIN**]("..joinLink..")\n\n"
 
-    local description = ""
-    description = description..rangeEmoji.." **Rango:** `"..rangeLabel.."`\n"
-    description = description.."💰 **Producción:** `"..formatMoney(top.value).."`\n"
-
-    if mutation then
-        description = description.."⚡ **Mutación:** `"..mutation.."`\n"
-    else
-        description = description.."⚡ **Mutación:** `Sin mutación`\n"
-    end
-
-    local topCount = grouped[top.name] and grouped[top.name].count or 1
-    description = description.."🔢 **Cantidad:** `"..topCount.."x`\n\n"
-
-    description = description.."**📋 Join ID**\n```"..jobId.."```\n"
-    description = description.."**🔗 Join Server**\n[**CLICK TO JOIN**]("..joinLink..")\n\n"
-
-    if #ordered > 1 then
-        description = description.."**🌟 Otros Brainrots Detectados:**\n```"
-        for _, v in ipairs(ordered) do
-            if normalizeName(v.name) ~= normalizeName(top.name) then
-                local mut = detectMutation(v.name)
-                local mutStr = mut and " ["..mut.."]" or ""
-                description = description..v.count.."x "..v.name..mutStr.."\n"
-                description = description.."   └ "..formatMoney(v.value).." | "..getRangeLabel(v.value).."\n"
+        if #ordered > 1 then
+            description = description.."**🌟 Otros Brainrots:**\n```"
+            for _, v in ipairs(ordered) do
+                if normalizeName(v.name) ~= normalizeName(top.name) then
+                    local mut = detectMutation(v.name)
+                    description = description..v.count.."x "..v.name..(mut and " ["..mut.."]" or "").."\n"
+                    description = description.."   └ "..formatMoney(v.value).." | "..getRangeLabel(v.value).."\n"
+                end
             end
+            description = description.."```\n"
         end
-        description = description.."```\n"
-    end
 
-    description = description.."**📊 Stats del Servidor**\n"
-    description = description.."```"
-    description = description.."Total brainrots: "..#ordered.."\n"
-    description = description.."Server ID: "..jobId:sub(1,8).."...\n"
-    description = description.."Servidores visitados: "..attempts
-    description = description.."```"
+        description = description.."**📊 Stats**\n```Total: "..#ordered.."\nServer: "..jobId:sub(1,8).."...\nVisitados: "..attempts.."```"
 
-    local color = 2829618
-    if top.value >= 1e9 then color = 16711680
-    elseif top.value >= 500e6 then color = 16763904
-    elseif top.value >= 100e6 then color = 65430 end
+        local color = 2829618
+        if top.value >= 1e9 then color = 16711680
+        elseif top.value >= 500e6 then color = 16763904
+        elseif top.value >= 100e6 then color = 65430 end
 
-    local titleEmoji = "💎"
-    if mutation then
-        if mutation:find("Bloodmoon") then titleEmoji = "🌑"
-        elseif mutation:find("Golden") then titleEmoji = "✨"
-        elseif mutation:find("Rainbow") then titleEmoji = "🌈"
-        elseif mutation:find("x") then titleEmoji = "⚡"
+        local titleEmoji = "💎"
+        if mutation then
+            if mutation:find("Bloodmoon") then titleEmoji = "🌑"
+            elseif mutation:find("Golden") then titleEmoji = "✨"
+            elseif mutation:find("Rainbow") then titleEmoji = "🌈"
+            elseif mutation:find("x") then titleEmoji = "⚡" end
         end
-    end
 
-    local embed = {
-        title = titleEmoji.." **"..top.name.."**",
-        description = description,
-        color = color,
-        footer = { text = FOOTER.." • "..os.date("%H:%M:%S") },
-        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    }
+        local embed = {
+            title = titleEmoji.." **"..top.name.."**",
+            description = description,
+            color = color,
+            footer = { text = FOOTER.." • "..os.date("%H:%M:%S") },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
+        if img then embed.thumbnail = { url = img } end
 
-    if img then
-        embed.thumbnail = { url = img }
-    end
-
-    http_request({
-        Url = webhook,
-        Method = "POST",
-        Headers = { ["Content-Type"] = "application/json" },
-        Body = HttpService:JSONEncode({ embeds = { embed } })
-    })
+        http_request({
+            Url = webhook,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({ embeds = { embed } })
+        })
+    end)
 end
 
--- ✅ GUARDAR EN ARCHIVO (para compartir con el finder cross-server)
 local function saveToFile()
     pcall(function()
         if writefile and getgenv().BrainrotDiscoveries then
-            local data = HttpService:JSONEncode(getgenv().BrainrotDiscoveries)
-            writefile("brainrot_history.json", data)
+            writefile("brainrot_history.json", HttpService:JSONEncode(getgenv().BrainrotDiscoveries))
         end
     end)
 end
 
-------------------------------------------------
 -- LOOP CUENTA ATRAS
-------------------------------------------------
 task.spawn(function()
     while true do
         if hopPaused then
             task.wait(0.5)
-        elseif hopFailed then
-            for i = 5, 0, -1 do
-                if hopPaused then break end
-                timerLabel.Text = "⚠️ Retry in "..i.."s"
-                timerLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-                task.wait(1)
-            end
-            if not hopPaused then
-                isHopping = false
-                forceHop()
-            end
         else
             for i = HOP_TIME, 0, -1 do
                 if hopPaused then break end
@@ -731,67 +719,89 @@ task.spawn(function()
     end
 end)
 
-------------------------------------------------
 -- LOOP SCAN
-------------------------------------------------
 task.spawn(function()
     while true do
-        local list = scan()
-        if #list > 0 then
-            table.sort(list, function(a,b) return a.value > b.value end)
-            clearResults()
+        pcall(function()
+            local list = scan()
+            if #list > 0 then
+                table.sort(list, function(a,b) return a.value > b.value end)
+                clearResults()
 
-            local grouped = {}
-            for _,v in ipairs(list) do
-                grouped[v.name] = grouped[v.name] or { name = v.name, value = v.value, count = 0 }
-                grouped[v.name].count += 1
-            end
-            local ordered = {}
-            for _,v in pairs(grouped) do table.insert(ordered, v) end
-            table.sort(ordered, function(a,b) return a.value > b.value end)
+                local grouped = {}
+                for _,v in ipairs(list) do
+                    grouped[v.name] = grouped[v.name] or { name = v.name, value = v.value, count = 0 }
+                    grouped[v.name].count += 1
+                end
+                local ordered = {}
+                for _,v in pairs(grouped) do table.insert(ordered, v) end
+                table.sort(ordered, function(a,b) return a.value > b.value end)
 
-            for _,v in ipairs(ordered) do
-                addResult(v.count.."x "..v.name, v.value)
-            end
-
-            local top = list[1]
-            local hash = normalizeName(top.name).."|"..math.floor(top.value).."|"..game.JobId
-            if not notified[hash] then
-                notified[hash] = true
-                setStatus("● Found! "..getRangeLabel(top.value), getRangeColor(top.value))
-                sendWebhook(top, grouped, ordered, game.JobId)
-
-                -- ==================== GUARDAR PARA LA GUI =====================
-                if not getgenv().BrainrotDiscoveries then
-                    getgenv().BrainrotDiscoveries = {}
+                for _,v in ipairs(ordered) do
+                    addResult(v.count.."x "..v.name, v.value)
                 end
 
-                for _, br in ipairs(ordered) do
-                    table.insert(getgenv().BrainrotDiscoveries, {
+                local top = list[1]
+                local hash = normalizeName(top.name).."|"..math.floor(top.value).."|"..game.JobId
+                if not notified[hash] then
+                    notified[hash] = true
+                    setStatus("● Found! "..getRangeLabel(top.value), getRangeColor(top.value))
+                    sendWebhook(top, grouped, ordered, game.JobId)
+
+                    if not getgenv().BrainrotDiscoveries then
+                        getgenv().BrainrotDiscoveries = {}
+                    end
+                    for _, br in ipairs(ordered) do
+                        table.insert(getgenv().BrainrotDiscoveries, {
+                            timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                            jobId = game.JobId,
+                            name = br.name,
+                            value = br.value,
+                            count = br.count or 1
+                        })
+                    end
+                    if #getgenv().BrainrotDiscoveries > 100 then
+                        table.remove(getgenv().BrainrotDiscoveries, 1)
+                    end
+
+                    saveToFile()
+
+                    -- ✅ WEBSOCKET: mandar al finder en tiempo real
+                    wsSend({
+                        type = "brainrot",
                         timestamp = os.date("%Y-%m-%d %H:%M:%S"),
                         jobId = game.JobId,
-                        name = br.name,
-                        value = br.value,
-                        count = br.count or 1
+                        placeId = tostring(placeId),
+                        name = top.name,
+                        value = top.value,
+                        count = grouped[top.name] and grouped[top.name].count or 1,
+                        mutation = detectMutation(top.name),
+                        others = ordered
                     })
                 end
-
-                -- Mantener solo los últimos 100
-                if #getgenv().BrainrotDiscoveries > 100 then
-                    table.remove(getgenv().BrainrotDiscoveries, 1)
-                end
-
-                -- ✅ GUARDAR EN ARCHIVO PARA EL FINDER (CROSS-SERVER)
-                saveToFile()
-                -- ==============================================================
-            end
-        else
-            if not hopPaused then
-                setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
             else
-                setStatus("● Pausado", Color3.fromRGB(150, 150, 150))
+                if not hopPaused then
+                    setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+                end
             end
-        end
+        end)
         task.wait(SCAN_DELAY)
+    end
+end)
+
+-- ✅ STATUS PING
+task.spawn(function()
+    while true do
+        pcall(function()
+            if writefile then
+                writefile("bot_status.json", HttpService:JSONEncode({
+                    active = true,
+                    lastPing = os.time()
+                }))
+            end
+            -- También mandamos ping por WebSocket
+            wsSend({ type = "ping", lastPing = os.time() })
+        end)
+        task.wait(5)
     end
 end)
