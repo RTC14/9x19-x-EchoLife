@@ -5,7 +5,7 @@ local WEBHOOK_500M = "https://discord.com/api/webhooks/1492690806757396520/-oLtS
 local WEBHOOK_1B   = "https://discord.com/api/webhooks/1492691237638115523/iqmLgclpSqSH4cgttmmL4VY7m7h0RobRmBIit3ZEdU1KVVbKBKJnoAYUVxLJcVISHvsF"
 local FOOTER       = "Bot Server Discord Notifier"
 local SCAN_DELAY   = 0.1
-local HOP_TIME     = 15  -- ✅ Hop cada 15 segundos
+local HOP_TIME     = 5
 local WS_URL       = "wss://joiner-production-b6dd.up.railway.app"
 ----------------------------------------
 
@@ -14,6 +14,8 @@ local Players          = game:GetService("Players")
 local TeleportService  = game:GetService("TeleportService")
 local TweenService     = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService       = game:GetService("RunService")
+local GuiService       = game:GetService("GuiService")
 
 local http_request = (request) or (http and http.request) or (syn and syn.request)
 if not http_request then return end
@@ -26,8 +28,35 @@ local attempts     = 0
 local notified     = {}
 local minimized    = false
 local isHopping    = false
-local hopFailed    = false
 local hopPaused    = false
+
+-- ✅ ANTI-ERROR
+local SETTINGS_FILE = "anti_error_settings.json"
+local antiError = false
+
+local function saveAntiError()
+    pcall(function()
+        if writefile then
+            writefile(SETTINGS_FILE, HttpService:JSONEncode({ antiError = antiError }))
+        end
+    end)
+end
+
+local function loadAntiError()
+    pcall(function()
+        if isfile and isfile(SETTINGS_FILE) then
+            local data = HttpService:JSONDecode(readfile(SETTINGS_FILE))
+            if data.antiError ~= nil then antiError = data.antiError end
+        end
+    end)
+end
+loadAntiError()
+
+RunService.RenderStepped:Connect(function()
+    if antiError then
+        pcall(function() GuiService:ClearError() end)
+    end
+end)
 
 -- IMÁGENES
 local BRAINROT_IMAGES = {
@@ -140,37 +169,32 @@ local BRAINROT_IMAGES = {
     ["Popcuru and Fizzuru"]="https://static.wikia.nocookie.net/stealabr/images/a/a9/Popuru_and_Fizzuru.png",
 }
 
-local MUTATIONS = {
-    ["x2"]=true,["x4"]=true,["x8"]=true,["x16"]=true,["x32"]=true,["x64"]=true,
-    ["Bloodmoon"]=true,["Golden"]=true,["Rainbow"]=true,["Shadow"]=true,
-    ["Crystal"]=true,["Neon"]=true,
-}
-
--- ✅ WEBSOCKET - Conectar al servidor
+-- WEBSOCKET
 local wsConnection = nil
 local wsConnected = false
 
 local function connectWebSocket()
     task.spawn(function()
         while true do
-            pcall(function()
-                local ws
-                if WebSocket and WebSocket.connect then
-                    ws = WebSocket.connect(WS_URL)
-                elseif syn and syn.websocket and syn.websocket.connect then
-                    ws = syn.websocket.connect(WS_URL)
-                end
-                if ws then
-                    wsConnection = ws
-                    wsConnected = true
-                    ws.OnClose:Connect(function()
-                        wsConnected = false
-                        wsConnection = nil
-                    end)
-                end
-            end)
+            if not wsConnected then
+                pcall(function()
+                    local ws
+                    if WebSocket and WebSocket.connect then
+                        ws = WebSocket.connect(WS_URL)
+                    elseif syn and syn.websocket and syn.websocket.connect then
+                        ws = syn.websocket.connect(WS_URL)
+                    end
+                    if ws then
+                        wsConnection = ws
+                        wsConnected = true
+                        ws.OnClose:Connect(function()
+                            wsConnected = false
+                            wsConnection = nil
+                        end)
+                    end
+                end)
+            end
             task.wait(10)
-            if wsConnected then break end
         end
     end)
 end
@@ -283,6 +307,28 @@ minBtn.Font = Enum.Font.GothamBold
 minBtn.BorderSizePixel = 0
 Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 8)
 
+-- Anti-Error botón en GUI
+local antiErrBtn = Instance.new("TextButton", topbar)
+antiErrBtn.Size = UDim2.new(0, 100, 0, 26)
+antiErrBtn.Position = UDim2.new(1, -145, 0.5, -13)
+antiErrBtn.TextSize = 11
+antiErrBtn.Font = Enum.Font.GothamBold
+antiErrBtn.TextColor3 = Color3.new(1,1,1)
+antiErrBtn.BorderSizePixel = 0
+Instance.new("UICorner", antiErrBtn).CornerRadius = UDim.new(0, 6)
+
+local function updateAntiErrBtn()
+    antiErrBtn.Text = antiError and "Anti-Err: ON" or "Anti-Err: OFF"
+    antiErrBtn.BackgroundColor3 = antiError and Color3.fromRGB(0, 170, 80) or Color3.fromRGB(25, 30, 48)
+end
+updateAntiErrBtn()
+
+antiErrBtn.MouseButton1Click:Connect(function()
+    antiError = not antiError
+    updateAntiErrBtn()
+    saveAntiError()
+end)
+
 local divider = Instance.new("Frame", main)
 divider.Size = UDim2.new(1, -20, 0, 1)
 divider.Position = UDim2.new(0, 10, 0, 52)
@@ -379,23 +425,18 @@ attemptsLabel.Font = Enum.Font.Gotham
 -- DRAG
 local dragging, dragStart, startPos
 topbar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or
-       input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = main.Position
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = main.Position
     end
 end)
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or
-       input.UserInputType == Enum.UserInputType.Touch) then
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStart
         main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
 end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or
-       input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = false
     end
 end)
@@ -403,24 +444,18 @@ end)
 minBtn.MouseButton1Click:Connect(function()
     minimized = not minimized
     if minimized then
-        content.Visible = false
-        divider.Visible = false
+        content.Visible = false; divider.Visible = false
         TweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 360, 0, 52)}):Play()
         minBtn.Text = "+"
     else
         TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 420)}):Play()
-        task.wait(0.35)
-        content.Visible = true
-        divider.Visible = true
-        minBtn.Text = "−"
+        task.wait(0.35); content.Visible = true; divider.Visible = true; minBtn.Text = "−"
     end
 end)
 
 -- FUNCIONES
 local function setStatus(text, color)
-    statusLabel.Text = text
-    statusLabel.TextColor3 = color
-    statusDot.BackgroundColor3 = color
+    statusLabel.Text = text; statusLabel.TextColor3 = color; statusDot.BackgroundColor3 = color
 end
 
 local function normalizeName(name)
@@ -486,8 +521,7 @@ local function detectMutation(name)
 end
 
 local function addResult(name, value)
-    noResults.Visible = false
-    resultsList.Visible = true
+    noResults.Visible = false; resultsList.Visible = true
     local item = Instance.new("Frame", resultsList)
     item.Size = UDim2.new(1, 0, 0, 42)
     item.BackgroundColor3 = Color3.fromRGB(20, 24, 38)
@@ -528,8 +562,7 @@ local function clearResults()
     for _, c in ipairs(resultsList:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
-    resultsList.Visible = false
-    noResults.Visible = true
+    resultsList.Visible = false; noResults.Visible = true
     resultsList.CanvasSize = UDim2.new(0, 0, 0, 0)
 end
 
@@ -542,21 +575,41 @@ local function parseProduction(text)
     if u == "T" then return n * 1e12 end
 end
 
--- ✅ ANTI-ERROR: findServer con pcall completo
+-- ✅ HOP RÁPIDO - sin retry loop, teleport inmediato
 local function findServer()
     local cursor = ""
     local found = nil
     pcall(function()
-        while true do
-            local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
+        -- Solo primera página para ser más rápido
+        local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100&cursor="..cursor
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(url))
+        end)
+        if success and result and result.data then
+            for _, server in pairs(result.data) do
+                if server.playing < server.maxPlayers
+                and server.id ~= currentJobId
+                and not triedServers[server.id] then
+                    triedServers[server.id] = true
+                    attempts += 1
+                    attemptsLabel.Text = "Servidores visitados: "..attempts
+                    found = server.id
+                    return
+                end
+            end
+        end
+    end)
+    -- Si no encontró en primera página, limpiar caché y reintentar
+    if not found then
+        triedServers = {}
+        pcall(function()
+            local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
             local success, result = pcall(function()
                 return HttpService:JSONDecode(game:HttpGet(url))
             end)
             if success and result and result.data then
                 for _, server in pairs(result.data) do
-                    if server.playing < server.maxPlayers
-                    and server.id ~= currentJobId
-                    and not triedServers[server.id] then
+                    if server.playing < server.maxPlayers and server.id ~= currentJobId then
                         triedServers[server.id] = true
                         attempts += 1
                         attemptsLabel.Text = "Servidores visitados: "..attempts
@@ -564,47 +617,32 @@ local function findServer()
                         return
                     end
                 end
-                if result.nextPageCursor then
-                    cursor = result.nextPageCursor
-                else break end
-            else break end
-        end
-    end)
+            end
+        end)
+    end
     return found
 end
 
--- ✅ ANTI-ERROR: forceHop silencioso sin notificaciones de error
 local function forceHop()
     if isHopping or hopPaused then return end
     isHopping = true
     clearResults()
     setStatus("● Hopping...", Color3.fromRGB(255, 200, 0))
+    timerLabel.Text = "⏱ Buscando..."
 
     local serverId = findServer()
-
     if serverId then
-        hopFailed = false
         timerLabel.Text = "⏱ Teleporting..."
         timerLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-        -- ✅ Teleport con pcall para suprimir errores
-        local ok = pcall(function()
+        pcall(function()
             TeleportService:TeleportToPlaceInstance(placeId, serverId, player)
         end)
-        if not ok then
-            isHopping = false
-            hopFailed = false
-            setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
-        end
-        triedServers = {}
-    else
-        -- ✅ En lugar de mostrar error, simplemente reinicia
-        hopFailed = false
-        isHopping = false
-        triedServers = {}
-        setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
-        timerLabel.Text = "⏱ Hop in "..HOP_TIME.."s"
-        timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
     end
+    -- Siempre resetear, sin mostrar error
+    isHopping = false
+    setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+    timerLabel.Text = "⏱ Hop in "..HOP_TIME.."s"
+    timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
 end
 
 local function scan()
@@ -634,11 +672,8 @@ local function sendWebhook(top, grouped, ordered, jobId)
         local joinLink = "https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId
         local mutation = detectMutation(top.name)
         local img = getBrainrotImage(top.name)
-        local rangeEmoji = getRangeEmoji(top.value)
-        local rangeLabel = getRangeLabel(top.value)
 
-        local description = ""
-        description = description..rangeEmoji.." **Rango:** `"..rangeLabel.."`\n"
+        local description = getRangeEmoji(top.value).." **Rango:** `"..getRangeLabel(top.value).."`\n"
         description = description.."💰 **Producción:** `"..formatMoney(top.value).."`\n"
         description = description.."⚡ **Mutación:** `"..(mutation or "Sin mutación").."`\n"
         local topCount = grouped[top.name] and grouped[top.name].count or 1
@@ -657,7 +692,6 @@ local function sendWebhook(top, grouped, ordered, jobId)
             end
             description = description.."```\n"
         end
-
         description = description.."**📊 Stats**\n```Total: "..#ordered.."\nServer: "..jobId:sub(1,8).."...\nVisitados: "..attempts.."```"
 
         local color = 2829618
@@ -699,7 +733,7 @@ local function saveToFile()
     end)
 end
 
--- LOOP CUENTA ATRAS
+-- LOOP HOP RÁPIDO (5s)
 task.spawn(function()
     while true do
         if hopPaused then
@@ -736,10 +770,7 @@ task.spawn(function()
                 local ordered = {}
                 for _,v in pairs(grouped) do table.insert(ordered, v) end
                 table.sort(ordered, function(a,b) return a.value > b.value end)
-
-                for _,v in ipairs(ordered) do
-                    addResult(v.count.."x "..v.name, v.value)
-                end
+                for _,v in ipairs(ordered) do addResult(v.count.."x "..v.name, v.value) end
 
                 local top = list[1]
                 local hash = normalizeName(top.name).."|"..math.floor(top.value).."|"..game.JobId
@@ -748,12 +779,11 @@ task.spawn(function()
                     setStatus("● Found! "..getRangeLabel(top.value), getRangeColor(top.value))
                     sendWebhook(top, grouped, ordered, game.JobId)
 
-                    if not getgenv().BrainrotDiscoveries then
-                        getgenv().BrainrotDiscoveries = {}
-                    end
+                    if not getgenv().BrainrotDiscoveries then getgenv().BrainrotDiscoveries = {} end
                     for _, br in ipairs(ordered) do
                         table.insert(getgenv().BrainrotDiscoveries, {
-                            timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                            timestamp = os.time(), -- ✅ guardamos timestamp como número
+                            timestampStr = os.date("%Y-%m-%d %H:%M:%S"),
                             jobId = game.JobId,
                             name = br.name,
                             value = br.value,
@@ -763,13 +793,13 @@ task.spawn(function()
                     if #getgenv().BrainrotDiscoveries > 100 then
                         table.remove(getgenv().BrainrotDiscoveries, 1)
                     end
-
                     saveToFile()
 
-                    -- ✅ WEBSOCKET: mandar al finder en tiempo real
+                    -- WebSocket tiempo real
                     wsSend({
                         type = "brainrot",
-                        timestamp = os.date("%Y-%m-%d %H:%M:%S"),
+                        timestamp = os.time(),
+                        timestampStr = os.date("%Y-%m-%d %H:%M:%S"),
                         jobId = game.JobId,
                         placeId = tostring(placeId),
                         name = top.name,
@@ -786,22 +816,5 @@ task.spawn(function()
             end
         end)
         task.wait(SCAN_DELAY)
-    end
-end)
-
--- ✅ STATUS PING
-task.spawn(function()
-    while true do
-        pcall(function()
-            if writefile then
-                writefile("bot_status.json", HttpService:JSONEncode({
-                    active = true,
-                    lastPing = os.time()
-                }))
-            end
-            -- También mandamos ping por WebSocket
-            wsSend({ type = "ping", lastPing = os.time() })
-        end)
-        task.wait(5)
     end
 end)
