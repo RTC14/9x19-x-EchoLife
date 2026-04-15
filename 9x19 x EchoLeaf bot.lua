@@ -30,50 +30,9 @@ local minimized    = false
 local isHopping    = false
 local hopPaused    = false
 
--- ✅ ANTI-ERROR SIEMPRE ACTIVO
+-- ✅ ANTI-ERROR SIEMPRE ACTIVO (sin botón)
 RunService.RenderStepped:Connect(function()
     pcall(function() GuiService:ClearError() end)
-end)
-
--- ✅ AUTO LOAD — se reejecutar al hacer server hop
-pcall(function()
-    local queueTeleport = queue_on_teleport
-        or (syn and syn.queue_on_teleport)
-        or (fluxus and fluxus.queue_on_teleport)
-
-    if queueTeleport then
-        local src = ""
-        pcall(function() src = getscriptsource(script) end)
-        if src == "" then
-            pcall(function() src = readfile("bot_notifier_main.lua") end)
-        end
-
-        if src and src ~= "" then
-            -- guardar para futuros hops
-            pcall(function() if writefile then writefile("bot_notifier_main.lua", src) end end)
-
-            Players.LocalPlayer.OnTeleport:Connect(function(state)
-                if state == Enum.TeleportState.Started or state == Enum.TeleportState.InProgress then
-                    pcall(function() queueTeleport(src) end)
-                end
-            end)
-        else
-            -- fallback: cargar desde archivo guardado
-            Players.LocalPlayer.OnTeleport:Connect(function(state)
-                if state == Enum.TeleportState.Started or state == Enum.TeleportState.InProgress then
-                    pcall(function()
-                        queueTeleport([[
-pcall(function()
-    if isfile and isfile("bot_notifier_main.lua") then
-        loadstring(readfile("bot_notifier_main.lua"))()
-    end
-end)
-]])
-                    end)
-                end
-            end)
-        end
-    end
 end)
 
 -- IMÁGENES
@@ -189,7 +148,7 @@ local BRAINROT_IMAGES = {
 
 -- WEBSOCKET
 local wsConnection = nil
-local wsConnected  = false
+local wsConnected = false
 
 local function connectWebSocket()
     task.spawn(function()
@@ -197,11 +156,18 @@ local function connectWebSocket()
             if not wsConnected then
                 pcall(function()
                     local ws
-                    if WebSocket and WebSocket.connect then ws = WebSocket.connect(WS_URL)
-                    elseif syn and syn.websocket and syn.websocket.connect then ws = syn.websocket.connect(WS_URL) end
+                    if WebSocket and WebSocket.connect then
+                        ws = WebSocket.connect(WS_URL)
+                    elseif syn and syn.websocket and syn.websocket.connect then
+                        ws = syn.websocket.connect(WS_URL)
+                    end
                     if ws then
-                        wsConnection = ws; wsConnected = true
-                        ws.OnClose:Connect(function() wsConnected = false; wsConnection = nil end)
+                        wsConnection = ws
+                        wsConnected = true
+                        ws.OnClose:Connect(function()
+                            wsConnected = false
+                            wsConnection = nil
+                        end)
                     end
                 end)
             end
@@ -212,13 +178,17 @@ end
 
 local function wsSend(data)
     pcall(function()
-        if wsConnected and wsConnection then wsConnection:Send(HttpService:JSONEncode(data)) end
+        if wsConnected and wsConnection then
+            wsConnection:Send(HttpService:JSONEncode(data))
+        end
     end)
 end
 
 connectWebSocket()
 
+------------------------------------------------
 -- GUI CUENTA ATRAS
+------------------------------------------------
 local timerGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 timerGui.ResetOnSpawn = false
 timerGui.Name = "BotTimer"
@@ -229,11 +199,15 @@ timerFrame.Position = UDim2.new(0.5, -150, 0, 8)
 timerFrame.BackgroundColor3 = Color3.fromRGB(10, 12, 22)
 timerFrame.BorderSizePixel = 0
 Instance.new("UICorner", timerFrame).CornerRadius = UDim.new(0, 10)
+
 local timerStroke = Instance.new("UIStroke", timerFrame)
-timerStroke.Color = Color3.fromRGB(0, 210, 255); timerStroke.Thickness = 1.5; timerStroke.Transparency = 0.4
+timerStroke.Color = Color3.fromRGB(0, 210, 255)
+timerStroke.Thickness = 1.5
+timerStroke.Transparency = 0.4
 
 local timerLabel = Instance.new("TextLabel", timerFrame)
 timerLabel.Size = UDim2.new(0.72, 0, 1, 0)
+timerLabel.Position = UDim2.new(0, 0, 0, 0)
 timerLabel.BackgroundTransparency = 1
 timerLabel.Text = "⏱ Hop in "..HOP_TIME.."s"
 timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
@@ -244,304 +218,532 @@ local pauseBtn = Instance.new("TextButton", timerFrame)
 pauseBtn.Size = UDim2.new(0.26, -4, 0, 26)
 pauseBtn.Position = UDim2.new(0.74, 0, 0.5, -13)
 pauseBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
-pauseBtn.Text = "⏸ Pausar"; pauseBtn.TextColor3 = Color3.new(1,1,1)
-pauseBtn.TextSize = 12; pauseBtn.Font = Enum.Font.GothamBold; pauseBtn.BorderSizePixel = 0
+pauseBtn.Text = "⏸ Pausar"
+pauseBtn.TextColor3 = Color3.new(1,1,1)
+pauseBtn.TextSize = 12
+pauseBtn.Font = Enum.Font.GothamBold
+pauseBtn.BorderSizePixel = 0
 Instance.new("UICorner", pauseBtn).CornerRadius = UDim.new(0, 6)
 
 pauseBtn.MouseButton1Click:Connect(function()
     hopPaused = not hopPaused
     if hopPaused then
-        pauseBtn.Text = "▶ Reanudar"; pauseBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-        timerLabel.TextColor3 = Color3.fromRGB(150, 150, 150); timerLabel.Text = "⏸ Pausado"
+        pauseBtn.Text = "▶ Reanudar"
+        pauseBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+        timerLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+        timerLabel.Text = "⏸ Pausado"
     else
-        pauseBtn.Text = "⏸ Pausar"; pauseBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
+        pauseBtn.Text = "⏸ Pausar"
+        pauseBtn.BackgroundColor3 = Color3.fromRGB(255, 150, 0)
         timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
     end
 end)
 
+------------------------------------------------
 -- GUI PRINCIPAL
+------------------------------------------------
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.ResetOnSpawn = false; gui.Name = "BotNotifier"
+gui.ResetOnSpawn = false
+gui.Name = "BotNotifier"
 
 local main = Instance.new("Frame", gui)
 main.Size = UDim2.new(0, 360, 0, 0)
 main.Position = UDim2.new(0.5, -180, 0.5, -210)
 main.BackgroundColor3 = Color3.fromRGB(10, 12, 22)
-main.BorderSizePixel = 0; main.ClipsDescendants = true
+main.BorderSizePixel = 0
+main.ClipsDescendants = true
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 18)
 
 local stroke = Instance.new("UIStroke", main)
-stroke.Color = Color3.fromRGB(0, 210, 255); stroke.Thickness = 1.5; stroke.Transparency = 0.4
+stroke.Color = Color3.fromRGB(0, 210, 255)
+stroke.Thickness = 1.5
+stroke.Transparency = 0.4
 
-TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 420)}):Play()
+TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+    Size = UDim2.new(0, 360, 0, 420)
+}):Play()
 
 local topbar = Instance.new("Frame", main)
-topbar.Size = UDim2.new(1, 0, 0, 52); topbar.BackgroundTransparency = 1
+topbar.Size = UDim2.new(1, 0, 0, 52)
+topbar.BackgroundTransparency = 1
 
 local title = Instance.new("TextLabel", topbar)
-title.Size = UDim2.new(0, 280, 1, 0); title.Position = UDim2.new(0, 15, 0, 0)
-title.BackgroundTransparency = 1; title.RichText = true
+title.Size = UDim2.new(0, 280, 1, 0)
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.RichText = true
 title.Text = '<b><font color="#00CFFF">Bot Server</font> <font color="#FFFFFF">Discord Notifier</font></b>'
-title.TextSize = 17; title.Font = Enum.Font.GothamBold; title.TextXAlignment = Enum.TextXAlignment.Left
+title.TextSize = 17
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
 
+-- ✅ BOTÓN MINIMIZAR (−/+)
 local minBtn = Instance.new("TextButton", topbar)
-minBtn.Size = UDim2.new(0, 30, 0, 30); minBtn.Position = UDim2.new(1, -42, 0.5, -15)
-minBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 48); minBtn.Text = "−"
-minBtn.TextColor3 = Color3.new(1,1,1); minBtn.TextSize = 18; minBtn.Font = Enum.Font.GothamBold; minBtn.BorderSizePixel = 0
+minBtn.Size = UDim2.new(0, 30, 0, 30)
+minBtn.Position = UDim2.new(1, -42, 0.5, -15)
+minBtn.BackgroundColor3 = Color3.fromRGB(25, 30, 48)
+minBtn.Text = "−"
+minBtn.TextColor3 = Color3.new(1,1,1)
+minBtn.TextSize = 18
+minBtn.Font = Enum.Font.GothamBold
+minBtn.BorderSizePixel = 0
 Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 8)
 
 local divider = Instance.new("Frame", main)
-divider.Size = UDim2.new(1, -20, 0, 1); divider.Position = UDim2.new(0, 10, 0, 52)
-divider.BackgroundColor3 = Color3.fromRGB(0, 210, 255); divider.BackgroundTransparency = 0.6; divider.BorderSizePixel = 0
+divider.Size = UDim2.new(1, -20, 0, 1)
+divider.Position = UDim2.new(0, 10, 0, 52)
+divider.BackgroundColor3 = Color3.fromRGB(0, 210, 255)
+divider.BackgroundTransparency = 0.6
+divider.BorderSizePixel = 0
 
 local content = Instance.new("Frame", main)
-content.Size = UDim2.new(1, 0, 1, -53); content.Position = UDim2.new(0, 0, 0, 53); content.BackgroundTransparency = 1
+content.Size = UDim2.new(1, 0, 1, -53)
+content.Position = UDim2.new(0, 0, 0, 53)
+content.BackgroundTransparency = 1
 
 local statusRow = Instance.new("Frame", content)
-statusRow.Size = UDim2.new(1, -20, 0, 32); statusRow.Position = UDim2.new(0, 10, 0, 10); statusRow.BackgroundTransparency = 1
+statusRow.Size = UDim2.new(1, -20, 0, 32)
+statusRow.Position = UDim2.new(0, 10, 0, 10)
+statusRow.BackgroundTransparency = 1
 
 local statusDot = Instance.new("Frame", statusRow)
-statusDot.Size = UDim2.new(0, 10, 0, 10); statusDot.Position = UDim2.new(0, 0, 0.5, -5)
-statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 150); statusDot.BorderSizePixel = 0
+statusDot.Size = UDim2.new(0, 10, 0, 10)
+statusDot.Position = UDim2.new(0, 0, 0.5, -5)
+statusDot.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+statusDot.BorderSizePixel = 0
 Instance.new("UICorner", statusDot).CornerRadius = UDim.new(1, 0)
 
 local statusLabel = Instance.new("TextLabel", statusRow)
-statusLabel.Size = UDim2.new(1, -15, 1, 0); statusLabel.Position = UDim2.new(0, 18, 0, 0)
-statusLabel.BackgroundTransparency = 1; statusLabel.Text = "● Scanning..."
-statusLabel.TextColor3 = Color3.fromRGB(0, 255, 150); statusLabel.TextSize = 14
-statusLabel.Font = Enum.Font.GothamBold; statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Size = UDim2.new(1, -15, 1, 0)
+statusLabel.Position = UDim2.new(0, 18, 0, 0)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "● Scanning..."
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+statusLabel.TextSize = 14
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
 local rangesFrame = Instance.new("Frame", content)
-rangesFrame.Size = UDim2.new(1, -20, 0, 32); rangesFrame.Position = UDim2.new(0, 10, 0, 50); rangesFrame.BackgroundTransparency = 1
+rangesFrame.Size = UDim2.new(1, -20, 0, 32)
+rangesFrame.Position = UDim2.new(0, 10, 0, 50)
+rangesFrame.BackgroundTransparency = 1
 
 local ranges = {
-    {text="10M-100M", color=Color3.fromRGB(0,200,255)},{text="100M-500M", color=Color3.fromRGB(0,255,150)},
-    {text="500M-1B",  color=Color3.fromRGB(255,200,0)},{text="1B+",       color=Color3.fromRGB(255,80,80)},
+    { text = "10M-100M",  color = Color3.fromRGB(0, 200, 255) },
+    { text = "100M-500M", color = Color3.fromRGB(0, 255, 150) },
+    { text = "500M-1B",   color = Color3.fromRGB(255, 200, 0) },
+    { text = "1B+",       color = Color3.fromRGB(255, 80, 80) },
 }
+
 for i, r in ipairs(ranges) do
     local tag = Instance.new("TextLabel", rangesFrame)
-    tag.Size = UDim2.new(0.24,-4,1,0); tag.Position = UDim2.new((i-1)*0.25,2,0,0)
-    tag.BackgroundColor3 = Color3.fromRGB(20,24,38); tag.Text = r.text; tag.TextColor3 = r.color
-    tag.TextSize = 11; tag.Font = Enum.Font.GothamBold; tag.BorderSizePixel = 0
+    tag.Size = UDim2.new(0.24, -4, 1, 0)
+    tag.Position = UDim2.new((i-1)*0.25, 2, 0, 0)
+    tag.BackgroundColor3 = Color3.fromRGB(20, 24, 38)
+    tag.Text = r.text
+    tag.TextColor3 = r.color
+    tag.TextSize = 11
+    tag.Font = Enum.Font.GothamBold
+    tag.BorderSizePixel = 0
     Instance.new("UICorner", tag).CornerRadius = UDim.new(0, 6)
 end
 
 local resultsFrame = Instance.new("Frame", content)
-resultsFrame.Size = UDim2.new(1,-20,1,-160); resultsFrame.Position = UDim2.new(0,10,0,90)
-resultsFrame.BackgroundColor3 = Color3.fromRGB(13,16,26); resultsFrame.BorderSizePixel = 0
+resultsFrame.Size = UDim2.new(1, -20, 1, -160)
+resultsFrame.Position = UDim2.new(0, 10, 0, 90)
+resultsFrame.BackgroundColor3 = Color3.fromRGB(13, 16, 26)
+resultsFrame.BorderSizePixel = 0
 Instance.new("UICorner", resultsFrame).CornerRadius = UDim.new(0, 12)
 
 local noResults = Instance.new("TextLabel", resultsFrame)
-noResults.Size = UDim2.new(1,0,1,0); noResults.BackgroundTransparency = 1
-noResults.Text = "Esperando brainrots..."; noResults.TextColor3 = Color3.fromRGB(90,100,135)
-noResults.TextSize = 13; noResults.Font = Enum.Font.Gotham
+noResults.Size = UDim2.new(1, 0, 1, 0)
+noResults.BackgroundTransparency = 1
+noResults.Text = "Esperando brainrots..."
+noResults.TextColor3 = Color3.fromRGB(90, 100, 135)
+noResults.TextSize = 13
+noResults.Font = Enum.Font.Gotham
 
 local resultsList = Instance.new("ScrollingFrame", resultsFrame)
-resultsList.Size = UDim2.new(1,-10,1,-10); resultsList.Position = UDim2.new(0,5,0,5)
-resultsList.BackgroundTransparency = 1; resultsList.ScrollBarThickness = 3
-resultsList.ScrollBarImageColor3 = Color3.fromRGB(0,200,255); resultsList.CanvasSize = UDim2.new(0,0,0,0)
+resultsList.Size = UDim2.new(1, -10, 1, -10)
+resultsList.Position = UDim2.new(0, 5, 0, 5)
+resultsList.BackgroundTransparency = 1
+resultsList.ScrollBarThickness = 3
+resultsList.ScrollBarImageColor3 = Color3.fromRGB(0, 200, 255)
+resultsList.CanvasSize = UDim2.new(0, 0, 0, 0)
 resultsList.Visible = false
 Instance.new("UIListLayout", resultsList).Padding = UDim.new(0, 5)
 
 local attemptsLabel = Instance.new("TextLabel", content)
-attemptsLabel.Size = UDim2.new(1,-20,0,25); attemptsLabel.Position = UDim2.new(0,10,1,-30)
-attemptsLabel.BackgroundTransparency = 1; attemptsLabel.Text = "Servidores visitados: 0"
-attemptsLabel.TextColor3 = Color3.fromRGB(80,90,120); attemptsLabel.TextSize = 12; attemptsLabel.Font = Enum.Font.Gotham
+attemptsLabel.Size = UDim2.new(1, -20, 0, 25)
+attemptsLabel.Position = UDim2.new(0, 10, 1, -30)
+attemptsLabel.BackgroundTransparency = 1
+attemptsLabel.Text = "Servidores visitados: 0"
+attemptsLabel.TextColor3 = Color3.fromRGB(80, 90, 120)
+attemptsLabel.TextSize = 12
+attemptsLabel.Font = Enum.Font.Gotham
 
 -- DRAG
 local dragging, dragStart, startPos
-topbar.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragging=true; dragStart=i.Position; startPos=main.Position end end)
-UserInputService.InputChanged:Connect(function(i)
-    if dragging and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
-        local d=i.Position-dragStart
-        main.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+d.X,startPos.Y.Scale,startPos.Y.Offset+d.Y) end end)
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then dragging=false end end)
-
-minBtn.MouseButton1Click:Connect(function()
-    minimized = not minimized
-    if minimized then
-        content.Visible=false; divider.Visible=false
-        TweenService:Create(main,TweenInfo.new(0.3,Enum.EasingStyle.Quad,Enum.EasingDirection.In),{Size=UDim2.new(0,360,0,52)}):Play()
-        minBtn.Text="+"
-    else
-        TweenService:Create(main,TweenInfo.new(0.4,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Size=UDim2.new(0,360,0,420)}):Play()
-        task.wait(0.35); content.Visible=true; divider.Visible=true; minBtn.Text="−"
+topbar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true; dragStart = input.Position; startPos = main.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
     end
 end)
 
--- FUNCIONES AUXILIARES
+-- ✅ BOTÓN MINIMIZAR FUNCIONAL
+minBtn.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        content.Visible = false
+        divider.Visible = false
+        TweenService:Create(main, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 360, 0, 52)}):Play()
+        minBtn.Text = "+"
+    else
+        TweenService:Create(main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 420)}):Play()
+        task.wait(0.35)
+        content.Visible = true
+        divider.Visible = true
+        minBtn.Text = "−"
+    end
+end)
+
+-- FUNCIONES
 local function setStatus(text, color)
-    statusLabel.Text=text; statusLabel.TextColor3=color; statusDot.BackgroundColor3=color end
-local function normalizeName(n) return n:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ") end
+    statusLabel.Text = text; statusLabel.TextColor3 = color; statusDot.BackgroundColor3 = color
+end
+
+local function normalizeName(name)
+    return name:lower():gsub("^%s+",""):gsub("%s+$",""):gsub("%s+"," ")
+end
+
 local function getBrainrotImage(name)
-    for k,v in pairs(BRAINROT_IMAGES) do if normalizeName(k)==normalizeName(name) then return v end end end
-local function getRangeColor(v)
-    if v>=1e9 then return Color3.fromRGB(255,80,80) elseif v>=500e6 then return Color3.fromRGB(255,200,0)
-    elseif v>=100e6 then return Color3.fromRGB(0,255,150) else return Color3.fromRGB(0,200,255) end end
-local function getRangeLabel(v)
-    if v>=1e9 then return "1B+" elseif v>=500e6 then return "500M-1B" elseif v>=100e6 then return "100M-500M" else return "10M-100M" end end
-local function getRangeEmoji(v)
-    if v>=1e9 then return "🔴" elseif v>=500e6 then return "🟡" elseif v>=100e6 then return "🟢" else return "🔵" end end
-local function getWebhook(v)
-    if v>=1e9 then return WEBHOOK_1B elseif v>=500e6 then return WEBHOOK_500M elseif v>=100e6 then return WEBHOOK_100M else return WEBHOOK_10M end end
+    for k, v in pairs(BRAINROT_IMAGES) do
+        if normalizeName(k) == normalizeName(name) then return v end
+    end
+    return nil
+end
+
+local function getRangeColor(value)
+    if value >= 1e9 then return Color3.fromRGB(255, 80, 80)
+    elseif value >= 500e6 then return Color3.fromRGB(255, 200, 0)
+    elseif value >= 100e6 then return Color3.fromRGB(0, 255, 150)
+    else return Color3.fromRGB(0, 200, 255) end
+end
+
+local function getRangeLabel(value)
+    if value >= 1e9 then return "1B+"
+    elseif value >= 500e6 then return "500M-1B"
+    elseif value >= 100e6 then return "100M-500M"
+    else return "10M-100M" end
+end
+
+local function getRangeEmoji(value)
+    if value >= 1e9 then return "🔴"
+    elseif value >= 500e6 then return "🟡"
+    elseif value >= 100e6 then return "🟢"
+    else return "🔵" end
+end
+
+local function getWebhook(value)
+    if value >= 1e9 then return WEBHOOK_1B
+    elseif value >= 500e6 then return WEBHOOK_500M
+    elseif value >= 100e6 then return WEBHOOK_100M
+    else return WEBHOOK_10M end
+end
+
 local function formatMoney(v)
-    if v>=1e12 then return string.format("$%.2fT/s",v/1e12) elseif v>=1e9 then return string.format("$%.2fB/s",v/1e9)
-    else return string.format("$%.2fM/s",v/1e6) end end
+    if v >= 1e12 then return string.format("$%.2fT/s", v/1e12)
+    elseif v >= 1e9 then return string.format("$%.2fB/s", v/1e9)
+    else return string.format("$%.2fM/s", v/1e6) end
+end
+
 local function detectMutation(name)
-    local l=name:lower()
-    if l:find("x2") then return "x2 ⚡" elseif l:find("x4") then return "x4 ⚡⚡" elseif l:find("x8") then return "x8 ⚡⚡⚡"
-    elseif l:find("x16") then return "x16 💥" elseif l:find("x32") then return "x32 💥💥" elseif l:find("x64") then return "x64 💥💥💥"
-    elseif l:find("bloodmoon") or l:find("blood") then return "🌑 Bloodmoon" elseif l:find("golden") or l:find("gold") then return "✨ Golden"
-    elseif l:find("rainbow") then return "🌈 Rainbow" elseif l:find("shadow") then return "🌑 Shadow"
-    elseif l:find("crystal") then return "💎 Crystal" elseif l:find("neon") then return "🌟 Neon" else return nil end end
+    local lower = name:lower()
+    if lower:find("x2") then return "x2 ⚡"
+    elseif lower:find("x4") then return "x4 ⚡⚡"
+    elseif lower:find("x8") then return "x8 ⚡⚡⚡"
+    elseif lower:find("x16") then return "x16 💥"
+    elseif lower:find("x32") then return "x32 💥💥"
+    elseif lower:find("x64") then return "x64 💥💥💥"
+    elseif lower:find("bloodmoon") or lower:find("blood") then return "🌑 Bloodmoon"
+    elseif lower:find("golden") or lower:find("gold") then return "✨ Golden"
+    elseif lower:find("rainbow") then return "🌈 Rainbow"
+    elseif lower:find("shadow") then return "🌑 Shadow"
+    elseif lower:find("crystal") then return "💎 Crystal"
+    elseif lower:find("neon") then return "🌟 Neon"
+    else return nil end
+end
 
 local function addResult(name, value)
-    noResults.Visible=false; resultsList.Visible=true
-    local item=Instance.new("Frame",resultsList); item.Size=UDim2.new(1,0,0,42)
-    item.BackgroundColor3=Color3.fromRGB(20,24,38); item.BorderSizePixel=0
-    Instance.new("UICorner",item).CornerRadius=UDim.new(0,8)
-    local rt=Instance.new("TextLabel",item); rt.Size=UDim2.new(0,75,0,18); rt.Position=UDim2.new(0,8,0,4)
-    rt.BackgroundColor3=Color3.fromRGB(10,12,22); rt.Text=getRangeLabel(value); rt.TextColor3=getRangeColor(value)
-    rt.TextSize=10; rt.Font=Enum.Font.GothamBold; rt.BorderSizePixel=0
-    Instance.new("UICorner",rt).CornerRadius=UDim.new(0,4)
-    local nl=Instance.new("TextLabel",item); nl.Size=UDim2.new(0.6,0,0,18); nl.Position=UDim2.new(0,8,0,22)
-    nl.BackgroundTransparency=1; nl.Text=name; nl.TextColor3=Color3.new(1,1,1); nl.TextSize=12
-    nl.Font=Enum.Font.GothamBold; nl.TextXAlignment=Enum.TextXAlignment.Left
-    local vl=Instance.new("TextLabel",item); vl.Size=UDim2.new(0.35,0,1,0); vl.Position=UDim2.new(0.62,0,0,0)
-    vl.BackgroundTransparency=1; vl.Text=value>=1e9 and string.format("$%.2fB/s",value/1e9) or string.format("$%.0fM/s",value/1e6)
-    vl.TextColor3=getRangeColor(value); vl.TextSize=13; vl.Font=Enum.Font.GothamBold; vl.TextXAlignment=Enum.TextXAlignment.Right
-    resultsList.CanvasSize=UDim2.new(0,0,0,#resultsList:GetChildren()*47) end
+    noResults.Visible = false; resultsList.Visible = true
+    local item = Instance.new("Frame", resultsList)
+    item.Size = UDim2.new(1, 0, 0, 42)
+    item.BackgroundColor3 = Color3.fromRGB(20, 24, 38)
+    item.BorderSizePixel = 0
+    Instance.new("UICorner", item).CornerRadius = UDim.new(0, 8)
+    local rangeTag = Instance.new("TextLabel", item)
+    rangeTag.Size = UDim2.new(0, 75, 0, 18)
+    rangeTag.Position = UDim2.new(0, 8, 0, 4)
+    rangeTag.BackgroundColor3 = Color3.fromRGB(10, 12, 22)
+    rangeTag.Text = getRangeLabel(value)
+    rangeTag.TextColor3 = getRangeColor(value)
+    rangeTag.TextSize = 10
+    rangeTag.Font = Enum.Font.GothamBold
+    rangeTag.BorderSizePixel = 0
+    Instance.new("UICorner", rangeTag).CornerRadius = UDim.new(0, 4)
+    local nameL = Instance.new("TextLabel", item)
+    nameL.Size = UDim2.new(0.6, 0, 0, 18)
+    nameL.Position = UDim2.new(0, 8, 0, 22)
+    nameL.BackgroundTransparency = 1
+    nameL.Text = name
+    nameL.TextColor3 = Color3.new(1,1,1)
+    nameL.TextSize = 12
+    nameL.Font = Enum.Font.GothamBold
+    nameL.TextXAlignment = Enum.TextXAlignment.Left
+    local valL = Instance.new("TextLabel", item)
+    valL.Size = UDim2.new(0.35, 0, 1, 0)
+    valL.Position = UDim2.new(0.62, 0, 0, 0)
+    valL.BackgroundTransparency = 1
+    valL.Text = value >= 1e9 and string.format("$%.2fB/s", value/1e9) or string.format("$%.0fM/s", value/1e6)
+    valL.TextColor3 = getRangeColor(value)
+    valL.TextSize = 13
+    valL.Font = Enum.Font.GothamBold
+    valL.TextXAlignment = Enum.TextXAlignment.Right
+    resultsList.CanvasSize = UDim2.new(0, 0, 0, #resultsList:GetChildren() * 47)
+end
 
 local function clearResults()
-    for _,c in ipairs(resultsList:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
-    resultsList.Visible=false; noResults.Visible=true; resultsList.CanvasSize=UDim2.new(0,0,0,0) end
+    for _, c in ipairs(resultsList:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    resultsList.Visible = false; noResults.Visible = true
+    resultsList.CanvasSize = UDim2.new(0, 0, 0, 0)
+end
 
 local function parseProduction(text)
-    local n,u=text:match("%$([%d%.]+)%s*([MBT])%s*/s"); if not n then return end
-    n=tonumber(n); if u=="M" then return n*1e6 elseif u=="B" then return n*1e9 elseif u=="T" then return n*1e12 end end
+    local n, u = text:match("%$([%d%.]+)%s*([MBT])%s*/s")
+    if not n then return end
+    n = tonumber(n)
+    if u == "M" then return n * 1e6 end
+    if u == "B" then return n * 1e9 end
+    if u == "T" then return n * 1e12 end
+end
 
 local function findServer()
-    local found=nil
+    local found = nil
     pcall(function()
-        local url="https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
-        local ok,result=pcall(function() return HttpService:JSONDecode(game:HttpGet(url)) end)
-        if ok and result and result.data then
-            for _,s in pairs(result.data) do
-                if s.playing<s.maxPlayers and s.id~=currentJobId and not triedServers[s.id] then
-                    triedServers[s.id]=true; attempts+=1
-                    attemptsLabel.Text="Servidores visitados: "..attempts; found=s.id; return end end end end)
-    if not found then triedServers={} end; return found end
+        local url = "https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Asc&limit=100"
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(game:HttpGet(url))
+        end)
+        if success and result and result.data then
+            for _, server in pairs(result.data) do
+                if server.playing < server.maxPlayers
+                and server.id ~= currentJobId
+                and not triedServers[server.id] then
+                    triedServers[server.id] = true
+                    attempts += 1
+                    attemptsLabel.Text = "Servidores visitados: "..attempts
+                    found = server.id
+                    return
+                end
+            end
+        end
+    end)
+    if not found then triedServers = {} end
+    return found
+end
 
 local function forceHop()
     if isHopping or hopPaused then return end
-    isHopping=true; clearResults(); setStatus("● Hopping...",Color3.fromRGB(255,200,0)); timerLabel.Text="⏱ Buscando..."
-    local sid=findServer()
-    if sid then
-        timerLabel.Text="⏱ Teleporting..."; timerLabel.TextColor3=Color3.fromRGB(0,255,150)
-        pcall(function() TeleportService:TeleportToPlaceInstance(placeId,sid,player) end) end
-    isHopping=false; setStatus("● Scanning...",Color3.fromRGB(0,255,150))
-    timerLabel.Text="⏱ Hop in "..HOP_TIME.."s"; timerLabel.TextColor3=Color3.fromRGB(0,210,255) end
+    isHopping = true
+    clearResults()
+    setStatus("● Hopping...", Color3.fromRGB(255, 200, 0))
+    timerLabel.Text = "⏱ Buscando..."
+    local serverId = findServer()
+    if serverId then
+        timerLabel.Text = "⏱ Teleporting..."
+        timerLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+        pcall(function()
+            TeleportService:TeleportToPlaceInstance(placeId, serverId, player)
+        end)
+    end
+    isHopping = false
+    setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+    timerLabel.Text = "⏱ Hop in "..HOP_TIME.."s"
+    timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
+end
 
 local function scan()
-    local list={}
+    local list = {}
     pcall(function()
         for _,ui in ipairs(workspace:GetDescendants()) do
             if ui:IsA("TextLabel") then
-                local value=parseProduction(ui.Text)
-                if value and value>=10e6 then
-                    local parent=ui.Parent
+                local value = parseProduction(ui.Text)
+                if value and value >= 10e6 then
+                    local parent = ui.Parent
                     for _,c in ipairs(parent:GetChildren()) do
                         if c:IsA("TextLabel") and not c.Text:find("%$") then
-                            table.insert(list,{name=c.Text,value=value}); break end end end end end)
-    return list end
+                            table.insert(list, { name = c.Text, value = value })
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end)
+    return list
+end
 
-local function sendWebhook(top,grouped,ordered,jobId)
+local function sendWebhook(top, grouped, ordered, jobId)
     pcall(function()
-        local webhook=getWebhook(top.value)
-        local joinLink="https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId
-        local mutation=detectMutation(top.name); local img=getBrainrotImage(top.name)
-        local desc=getRangeEmoji(top.value).." **Rango:** `"..getRangeLabel(top.value).."`\n"
-        desc=desc.."💰 **Producción:** `"..formatMoney(top.value).."`\n"
-        desc=desc.."⚡ **Mutación:** `"..(mutation or "Sin mutación").."`\n"
-        desc=desc.."🔢 **Cantidad:** `"..(grouped[top.name] and grouped[top.name].count or 1).."x`\n\n"
-        desc=desc.."**📋 Join ID**\n```"..jobId.."```\n"
-        desc=desc.."**🔗 Join Server**\n[**CLICK TO JOIN**](https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId..")\n\n"
-        if #ordered>1 then
-            desc=desc.."**🌟 Otros:**\n```"
-            for _,v in ipairs(ordered) do
-                if normalizeName(v.name)~=normalizeName(top.name) then
-                    desc=desc..v.count.."x "..v.name..(detectMutation(v.name) and " ["..detectMutation(v.name).."]" or "").."\n"
-                    desc=desc.."   └ "..formatMoney(v.value).." | "..getRangeLabel(v.value).."\n" end end
-            desc=desc.."```\n" end
-        desc=desc.."**📊 Stats**\n```Total: "..#ordered.."\nServer: "..jobId:sub(1,8).."...\nVisitados: "..attempts.."```"
-        local color=2829618
-        if top.value>=1e9 then color=16711680 elseif top.value>=500e6 then color=16763904 elseif top.value>=100e6 then color=65430 end
-        local te="💎"
+        local webhook = getWebhook(top.value)
+        local joinLink = "https://chillihub1.github.io/chillihub-joiner/?placeId="..placeId.."&gameInstanceId="..jobId
+        local mutation = detectMutation(top.name)
+        local img = getBrainrotImage(top.name)
+
+        local description = getRangeEmoji(top.value).." **Rango:** `"..getRangeLabel(top.value).."`\n"
+        description = description.."💰 **Producción:** `"..formatMoney(top.value).."`\n"
+        description = description.."⚡ **Mutación:** `"..(mutation or "Sin mutación").."`\n"
+        local topCount = grouped[top.name] and grouped[top.name].count or 1
+        description = description.."🔢 **Cantidad:** `"..topCount.."x`\n\n"
+        description = description.."**📋 Join ID**\n```"..jobId.."```\n"
+        description = description.."**🔗 Join Server**\n[**CLICK TO JOIN**]("..joinLink..")\n\n"
+        if #ordered > 1 then
+            description = description.."**🌟 Otros Brainrots:**\n```"
+            for _, v in ipairs(ordered) do
+                if normalizeName(v.name) ~= normalizeName(top.name) then
+                    local mut = detectMutation(v.name)
+                    description = description..v.count.."x "..v.name..(mut and " ["..mut.."]" or "").."\n"
+                    description = description.."   └ "..formatMoney(v.value).." | "..getRangeLabel(v.value).."\n"
+                end
+            end
+            description = description.."```\n"
+        end
+        description = description.."**📊 Stats**\n```Total: "..#ordered.."\nServer: "..jobId:sub(1,8).."...\nVisitados: "..attempts.."```"
+
+        local color = 2829618
+        if top.value >= 1e9 then color = 16711680
+        elseif top.value >= 500e6 then color = 16763904
+        elseif top.value >= 100e6 then color = 65430 end
+
+        local titleEmoji = "💎"
         if mutation then
-            if mutation:find("Bloodmoon") then te="🌑" elseif mutation:find("Golden") then te="✨"
-            elseif mutation:find("Rainbow") then te="🌈" elseif mutation:find("x") then te="⚡" end end
-        local embed={title=te.." **"..top.name.."**",description=desc,color=color,
-            footer={text=FOOTER.." • "..os.date("%H:%M:%S")},timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}
-        if img then embed.thumbnail={url=img} end
-        http_request({Url=webhook,Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode({embeds={embed}})}) end) end
+            if mutation:find("Bloodmoon") then titleEmoji = "🌑"
+            elseif mutation:find("Golden") then titleEmoji = "✨"
+            elseif mutation:find("Rainbow") then titleEmoji = "🌈"
+            elseif mutation:find("x") then titleEmoji = "⚡" end
+        end
+
+        local embed = {
+            title = titleEmoji.." **"..top.name.."**",
+            description = description,
+            color = color,
+            footer = { text = FOOTER.." • "..os.date("%H:%M:%S") },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }
+        if img then embed.thumbnail = { url = img } end
+        http_request({
+            Url = webhook, Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({ embeds = { embed } })
+        })
+    end)
+end
 
 local function saveToFile()
     pcall(function()
         if writefile and getgenv().BrainrotDiscoveries then
-            writefile("brainrot_history.json",HttpService:JSONEncode(getgenv().BrainrotDiscoveries)) end end) end
+            writefile("brainrot_history.json", HttpService:JSONEncode(getgenv().BrainrotDiscoveries))
+        end
+    end)
+end
 
 -- LOOP HOP
 task.spawn(function()
     while true do
         if hopPaused then task.wait(0.5)
         else
-            for i=HOP_TIME,0,-1 do
+            for i = HOP_TIME, 0, -1 do
                 if hopPaused then break end
-                timerLabel.Text="⏱ Hop in "..i.."s"; timerLabel.TextColor3=Color3.fromRGB(0,210,255); task.wait(1) end
-            if not hopPaused then isHopping=false; forceHop() end end end end)
+                timerLabel.Text = "⏱ Hop in "..i.."s"
+                timerLabel.TextColor3 = Color3.fromRGB(0, 210, 255)
+                task.wait(1)
+            end
+            if not hopPaused then isHopping = false; forceHop() end
+        end
+    end
+end)
 
 -- LOOP SCAN
 task.spawn(function()
     while true do
         pcall(function()
-            local list=scan()
-            if #list>0 then
-                table.sort(list,function(a,b) return a.value>b.value end); clearResults()
-                local grouped={}
+            local list = scan()
+            if #list > 0 then
+                table.sort(list, function(a,b) return a.value > b.value end)
+                clearResults()
+                local grouped = {}
                 for _,v in ipairs(list) do
-                    grouped[v.name]=grouped[v.name] or {name=v.name,value=v.value,count=0}; grouped[v.name].count+=1 end
-                local ordered={}
-                for _,v in pairs(grouped) do table.insert(ordered,v) end
-                table.sort(ordered,function(a,b) return a.value>b.value end)
-                for _,v in ipairs(ordered) do addResult(v.count.."x "..v.name,v.value) end
-                local top=list[1]
-                local hash=normalizeName(top.name).."|"..math.floor(top.value).."|"..game.JobId
+                    grouped[v.name] = grouped[v.name] or { name = v.name, value = v.value, count = 0 }
+                    grouped[v.name].count += 1
+                end
+                local ordered = {}
+                for _,v in pairs(grouped) do table.insert(ordered, v) end
+                table.sort(ordered, function(a,b) return a.value > b.value end)
+                for _,v in ipairs(ordered) do addResult(v.count.."x "..v.name, v.value) end
+
+                local top = list[1]
+                local hash = normalizeName(top.name).."|"..math.floor(top.value).."|"..game.JobId
                 if not notified[hash] then
-                    notified[hash]=true; setStatus("● Found! "..getRangeLabel(top.value),getRangeColor(top.value))
-                    sendWebhook(top,grouped,ordered,game.JobId)
-                    if not getgenv().BrainrotDiscoveries then getgenv().BrainrotDiscoveries={} end
-                    for _,br in ipairs(ordered) do
-                        table.insert(getgenv().BrainrotDiscoveries,{
-                            timestamp=os.time(),timestampStr=os.date("%Y-%m-%d %H:%M:%S"),
-                            jobId=game.JobId,name=br.name,value=br.value,count=br.count or 1}) end
-                    if #getgenv().BrainrotDiscoveries>100 then table.remove(getgenv().BrainrotDiscoveries,1) end
+                    notified[hash] = true
+                    setStatus("● Found! "..getRangeLabel(top.value), getRangeColor(top.value))
+                    sendWebhook(top, grouped, ordered, game.JobId)
+                    if not getgenv().BrainrotDiscoveries then getgenv().BrainrotDiscoveries = {} end
+                    for _, br in ipairs(ordered) do
+                        table.insert(getgenv().BrainrotDiscoveries, {
+                            timestamp    = os.time(),
+                            timestampStr = os.date("%Y-%m-%d %H:%M:%S"),
+                            jobId        = game.JobId,
+                            name         = br.name,
+                            value        = br.value,
+                            count        = br.count or 1
+                        })
+                    end
+                    if #getgenv().BrainrotDiscoveries > 100 then
+                        table.remove(getgenv().BrainrotDiscoveries, 1)
+                    end
                     saveToFile()
-                    wsSend({type="brainrot",timestamp=os.time(),timestampStr=os.date("%Y-%m-%d %H:%M:%S"),
-                        jobId=game.JobId,placeId=tostring(placeId),name=top.name,value=top.value,
-                        count=grouped[top.name] and grouped[top.name].count or 1,
-                        mutation=detectMutation(top.name),others=ordered})
-                    -- ✅ AUTO HOP INMEDIATO al detectar brainrot ≥10M (sin esperar el timer)
-                    task.spawn(function()
-                        task.wait(0.5) -- pequeño delay para que el webhook se envíe
-                        if not hopPaused then
-                            isHopping = false
-                            forceHop()
-                        end
-                    end)
+                    wsSend({
+                        type         = "brainrot",
+                        timestamp    = os.time(),
+                        timestampStr = os.date("%Y-%m-%d %H:%M:%S"),
+                        jobId        = game.JobId,
+                        placeId      = tostring(placeId),
+                        name         = top.name,
+                        value        = top.value,
+                        count        = grouped[top.name] and grouped[top.name].count or 1,
+                        mutation     = detectMutation(top.name),
+                        others       = ordered
+                    })
                 end
             else
-                if not hopPaused then setStatus("● Scanning...",Color3.fromRGB(0,255,150)) end end end)
-        task.wait(SCAN_DELAY) end end)
+                if not hopPaused then
+                    setStatus("● Scanning...", Color3.fromRGB(0, 255, 150))
+                end
+            end
+        end)
+        task.wait(SCAN_DELAY)
+    end
+end)
